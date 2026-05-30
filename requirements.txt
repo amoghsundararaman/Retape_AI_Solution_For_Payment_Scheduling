@@ -1,0 +1,18 @@
+# ── Test runner ──────────────────────────────────────────────────────────────
+pytest>=8.0
+
+# ── Core engine ──────────────────────────────────────────────────────────────
+# The settlement engine itself needs only the Python standard library.
+# The following are optional layers on top of it.
+
+# ── UI platform (Streamlit) ───────────────────────────────────────────────────
+streamlit>=1.35.0       # web UI
+plotly>=5.20.0          # interactive charts
+pandas>=2.0.0           # schedule table display
+reportlab>=4.0.0        # server-side PDF generation
+
+# ── API server (FastAPI) ──────────────────────────────────────────────────────
+# Provides a REST API with auto-generated OpenAPI / Swagger docs.
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9  # for FastAPI form parsing

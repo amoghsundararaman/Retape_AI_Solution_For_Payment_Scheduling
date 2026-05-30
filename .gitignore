@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+.DS_Store
+.idea/
+.vscode/
+
+# Generated artefacts — not committed
+docs/*.pdf
+*.jsonl
