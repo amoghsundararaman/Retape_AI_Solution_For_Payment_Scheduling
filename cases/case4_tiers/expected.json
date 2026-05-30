@@ -1,0 +1,82 @@
+{
+  "feasible": true,
+  "pay_shape_used": "staircase",
+  "schedule": [
+    {
+      "date": "2026-01-31",
+      "creditor_payment_cents": 2500,
+      "program_fee_cents": 7000,
+      "bank_fee_cents": 500,
+      "balance_cents": 0
+    },
+    {
+      "date": "2026-02-28",
+      "creditor_payment_cents": 2500,
+      "program_fee_cents": 7000,
+      "bank_fee_cents": 500,
+      "balance_cents": 0
+    },
+    {
+      "date": "2026-03-31",
+      "creditor_payment_cents": 2500,
+      "program_fee_cents": 7000,
+      "bank_fee_cents": 500,
+      "balance_cents": 0
+    },
+    {
+      "date": "2026-04-30",
+      "creditor_payment_cents": 2500,
+      "program_fee_cents": 7000,
+      "bank_fee_cents": 500,
+      "balance_cents": 0
+    },
+    {
+      "date": "2026-05-31",
+      "creditor_payment_cents": 2500,
+      "program_fee_cents": 2000,
+      "bank_fee_cents": 500,
+      "balance_cents": 5000
+    },
+    {
+      "date": "2026-06-30",
+      "creditor_payment_cents": 2500,
+      "program_fee_cents": 0,
+      "bank_fee_cents": 500,
+      "balance_cents": 12000
+    },
+    {
+      "date": "2026-07-31",
+      "creditor_payment_cents": 11250,
+      "program_fee_cents": 0,
+      "bank_fee_cents": 500,
+      "balance_cents": 10250
+    },
+    {
+      "date": "2026-08-31",
+      "creditor_payment_cents": 11250,
+      "program_fee_cents": 0,
+      "bank_fee_cents": 500,
+      "balance_cents": 8500
+    },
+    {
+      "date": "2026-09-30",
+      "creditor_payment_cents": 11250,
+      "program_fee_cents": 0,
+      "bank_fee_cents": 500,
+      "balance_cents": 6750
+    },
+    {
+      "date": "2026-10-31",
+      "creditor_payment_cents": 11250,
+      "program_fee_cents": 0,
+      "bank_fee_cents": 500,
+      "balance_cents": 5000
+    }
+  ],
+  "additional_funds": null,
+  "diagnostics": {
+    "min_balance_cents": 0,
+    "selected_k": 10,
+    "note": "min_balance_cents is the tightest buffer across the schedule (slack)."
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "feasible": false,
+  "pay_shape_used": null,
+  "schedule": null,
+  "additional_funds": {
+    "lump_sum": {
+      "amount_cents": 10000,
+      "within_guardrail": true,
+      "reason": "",
+      "date": "2026-01-01"
+    },
+    "monthly_increment": {
+      "amount_cents": 2500,
+      "within_guardrail": true,
+      "reason": "",
+      "num_drafts": 5
+    }
+  },
+  "diagnostics": {
+    "kind": "balance_negative",
+    "reason": "With the cheapest feasible payment structure, the escrow balance first goes negative on 2026-04-30, short by 10000 cents. Cash arriving after the last usable cadence date cannot help, so extra funding must land on or before that date.",
+    "binding_date": "2026-04-30",
+    "shortfall_cents": 10000
+  }
+}
