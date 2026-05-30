@@ -54,3 +54,22 @@ def test_alternate_objective_still_yields_a_valid_schedule():
 def test_registry_exposes_named_objectives():
     assert set(objectives.REGISTRY) == {"front_load_fee", "min_bank_fees", "max_slack"}
     assert objectives.DEFAULT is objectives.front_load_fee
+
+
+def test_max_slack_objective_yields_valid_schedule():
+    client, offer, rules = _diverging_case()
+    r = evaluate_offer(client, offer, rules, objective=objectives.max_slack)
+    H.assert_valid_schedule(r, client, offer, rules)
+
+
+def test_max_slack_key_prefers_larger_min_balance():
+    # The max_slack key is (min_balance, fee_key, -k); a larger min_balance wins.
+    class _Sim:
+        def __init__(self, min_balance, fee_key, total_bank):
+            self.min_balance = min_balance
+            self.fee_key = fee_key
+            self.total_bank = total_bank
+
+    loose = objectives.max_slack(_Sim(5000, (0,), 0), k=3)
+    tight = objectives.max_slack(_Sim(100, (0,), 0), k=3)
+    assert loose > tight
