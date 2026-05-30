@@ -232,79 +232,132 @@ def _analytics(offer_d: dict, rd: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PDF
+# PDF  —  multi-audience document: client, analyst, engineer, CEO
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
+    from datetime import date as _date
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+        BaseDocTemplate, PageTemplate, Frame,
+        Paragraph, Spacer, Table, TableStyle,
+        HRFlowable, KeepTogether, PageBreak,
     )
 
-    buf   = BytesIO()
-    doc   = SimpleDocTemplate(buf, pagesize=letter,
-                               topMargin=0.8*inch, bottomMargin=0.8*inch,
-                               leftMargin=0.85*inch, rightMargin=0.85*inch)
-    ss    = getSampleStyleSheet()
+    # ── Palette ──────────────────────────────────────────────────────────────
     NAVY  = colors.HexColor("#0D1117")
     BLUE  = colors.HexColor("#2563EB")
+    LBLUE = colors.HexColor("#EFF6FF")
+    GREEN = colors.HexColor("#16A34A")
+    LGREEN= colors.HexColor("#F0FDF4")
+    BGREEN= colors.HexColor("#86EFAC")
+    RED   = colors.HexColor("#DC2626")
+    LRED  = colors.HexColor("#FFF1F2")
+    BRED  = colors.HexColor("#FDA4AF")
+    AMBER = colors.HexColor("#D97706")
     GRAY  = colors.HexColor("#6B7280")
     LGRAY = colors.HexColor("#F8FAFF")
+    MGRAY = colors.HexColor("#F1F5F9")
     BDR   = colors.HexColor("#E2E8F0")
+    WHITE = colors.white
 
-    h1   = ParagraphStyle("h1",  parent=ss["Heading1"], fontSize=19, textColor=NAVY,
-                           spaceAfter=4, fontName="Helvetica-Bold")
-    h2   = ParagraphStyle("h2",  parent=ss["Heading2"], fontSize=12, textColor=NAVY,
-                           spaceBefore=14, spaceAfter=6, fontName="Helvetica-Bold")
-    body = ParagraphStyle("body",parent=ss["BodyText"], fontSize=9,  leading=13,
-                           textColor=colors.HexColor("#374151"))
-    cap  = ParagraphStyle("cap", parent=body, textColor=GRAY, fontSize=8)
+    PW, PH = letter
+    LM = RM = 0.75 * inch
+    TM = 0.9 * inch
+    BM = 0.7 * inch
 
-    story   = []
-    feasible = rd["feasible"]
+    # ── Header / footer drawn on every page ──────────────────────────────────
+    def _on_page(canvas, doc):
+        canvas.saveState()
+        # Top bar
+        canvas.setFillColor(NAVY)
+        canvas.rect(0, PH - 0.44*inch, PW, 0.44*inch, fill=1, stroke=0)
+        canvas.setFillColor(WHITE)
+        canvas.setFont("Helvetica-Bold", 9)
+        canvas.drawString(LM, PH - 0.27*inch, "Retape AI  ·  Settlement Feasibility Engine")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#8B949E"))
+        canvas.drawRightString(PW - RM, PH - 0.27*inch,
+                               f"Settlement Analysis Report  ·  {creditor}")
+        # Bottom bar
+        canvas.setFillColor(MGRAY)
+        canvas.rect(0, 0, PW, BM * 0.85, fill=1, stroke=0)
+        canvas.setFillColor(GRAY)
+        canvas.setFont("Helvetica", 7.5)
+        canvas.drawString(LM, 0.28*inch,
+                          f"Generated {_date.today().isoformat()}  ·  Confidential — Retape AI")
+        canvas.drawRightString(PW - RM, 0.28*inch, f"Page {doc.page}")
+        canvas.restoreState()
 
-    story.append(Paragraph(f"Settlement Report — {creditor}", h1))
-    ok_str = "FEASIBLE ✓" if feasible else "INFEASIBLE ✗"
-    story.append(Paragraph(
-        f"Status: <b>{ok_str}</b>  ·  Shape: {rd.get('pay_shape_used','—')}  ·  {an['duration']} months",
-        body,
-    ))
-    story.append(HRFlowable(width="100%", thickness=1, color=BLUE, spaceAfter=12, spaceBefore=8))
+    buf = BytesIO()
+    doc = BaseDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=LM, rightMargin=RM, topMargin=TM, bottomMargin=BM,
+    )
+    frame = Frame(LM, BM, PW - LM - RM, PH - TM - BM, id="body")
+    doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_on_page)])
 
-    story.append(Paragraph("Financial Summary", h2))
-    rows = [
-        ["Offer Total",  _fmt(an["offer_total"])],
-        ["Program Fee",  _fmt(an["program_fee"])],
-        ["Bank Fees",    _fmt(an["bank_fees"])],
-        ["Total Cost",   _fmt(an["total_cost"])],
-        ["Savings",      f"{_fmt(an['savings'])} ({an['savings_pct']}%)"],
-    ]
-    t1 = Table(rows, colWidths=[2.0*inch, 2.4*inch])
-    t1.setStyle(TableStyle([
-        ("FONTSIZE",      (0,0),(-1,-1), 9),
-        ("FONTNAME",      (0,0),(0,-1),  "Helvetica-Bold"),
-        ("TEXTCOLOR",     (0,0),(0,-1),  GRAY),
-        ("ROWBACKGROUNDS",(0,0),(-1,-1), [LGRAY, colors.white]),
-        ("GRID",          (0,0),(-1,-1), 0.3, BDR),
-        ("TOPPADDING",    (0,0),(-1,-1), 5),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
-        ("LEFTPADDING",   (0,0),(-1,-1), 8),
-    ]))
-    story.append(t1)
+    # ── Styles ────────────────────────────────────────────────────────────────
+    ss   = getSampleStyleSheet()
+    def _s(name, **kw):
+        base = kw.pop("parent", ss["Normal"])
+        return ParagraphStyle(name, parent=base, **kw)
 
-    if feasible and rd.get("schedule"):
-        story.append(Paragraph("Payment Schedule", h2))
-        sc   = rd["schedule"]
-        data = [["Date", "Creditor", "Program Fee", "Bank Fee", "Balance"]]
+    S_h1   = _s("h1",   fontSize=20, fontName="Helvetica-Bold", textColor=NAVY,
+                 spaceAfter=4, leading=24)
+    S_h2   = _s("h2",   fontSize=12, fontName="Helvetica-Bold", textColor=NAVY,
+                 spaceBefore=16, spaceAfter=5, leading=15)
+    S_h3   = _s("h3",   fontSize=10, fontName="Helvetica-Bold", textColor=BLUE,
+                 spaceBefore=10, spaceAfter=3)
+    S_body = _s("body", fontSize=9,  leading=13, textColor=colors.HexColor("#374151"))
+    S_small= _s("sm",   fontSize=8,  leading=11, textColor=GRAY, parent=S_body)
+    S_mono = _s("mono", fontSize=8,  fontName="Courier", leading=11,
+                 textColor=NAVY)
+    S_lbl  = _s("lbl",  fontSize=8,  fontName="Helvetica-Bold", textColor=GRAY,
+                 leading=10)
+    S_cap  = _s("cap",  fontSize=7.5, textColor=GRAY, leading=10,
+                 alignment=TA_CENTER)
+
+    def P(txt, s=None): return Paragraph(txt, s or S_body)
+    def SP(h=8):        return Spacer(1, h)
+    def HR(color=BDR, thick=0.5, before=4, after=10):
+        return HRFlowable(width="100%", thickness=thick, color=color,
+                          spaceAfter=after, spaceBefore=before)
+
+    def _two_col_table(rows, cw=None):
+        """Label / value table, no header row."""
+        cw = cw or [2.1*inch, 2.6*inch]
+        t  = Table(rows, colWidths=cw)
+        t.setStyle(TableStyle([
+            ("FONTSIZE",      (0,0),(-1,-1), 9),
+            ("FONTNAME",      (0,0),(0,-1),  "Helvetica-Bold"),
+            ("TEXTCOLOR",     (0,0),(0,-1),  GRAY),
+            ("ALIGN",         (1,0),(1,-1),  "RIGHT"),
+            ("ROWBACKGROUNDS",(0,0),(-1,-1), [WHITE, LGRAY]),
+            ("GRID",          (0,0),(-1,-1), 0.3, BDR),
+            ("TOPPADDING",    (0,0),(-1,-1), 5),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+            ("LEFTPADDING",   (0,0),(-1,-1), 8),
+            ("RIGHTPADDING",  (0,0),(-1,-1), 8),
+        ]))
+        return t
+
+    def _schedule_table(sc):
+        hdrs = ["Date", "Creditor Payment", "Program Fee", "Bank Fee", "Running Balance"]
+        data = [hdrs]
         for r in sc:
             data.append([
-                r["date"], _fmt(r["creditor_payment_cents"]),
-                _fmt(r["program_fee_cents"]), _fmt(r["bank_fee_cents"]),
+                r["date"],
+                _fmt(r["creditor_payment_cents"]),
+                _fmt(r["program_fee_cents"])   if r["program_fee_cents"]   else "—",
+                _fmt(r["bank_fee_cents"])       if r["bank_fee_cents"]       else "—",
                 _fmt(r["balance_cents"]),
             ])
+        # Totals
         data.append([
             "TOTAL",
             _fmt(sum(r["creditor_payment_cents"] for r in sc)),
@@ -312,25 +365,401 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
             _fmt(sum(r["bank_fee_cents"]           for r in sc)),
             "—",
         ])
-        t2 = Table(data, colWidths=[1.1*inch, 1.2*inch, 1.1*inch, 0.9*inch, 1.1*inch])
-        t2.setStyle(TableStyle([
+        cw = [1.05*inch, 1.3*inch, 1.05*inch, 0.85*inch, 1.25*inch]
+        t  = Table(data, colWidths=cw, repeatRows=1)
+        t.setStyle(TableStyle([
+            # Header row
             ("BACKGROUND",    (0,0),(-1,0),  NAVY),
-            ("TEXTCOLOR",     (0,0),(-1,0),  colors.white),
+            ("TEXTCOLOR",     (0,0),(-1,0),  WHITE),
             ("FONTNAME",      (0,0),(-1,0),  "Helvetica-Bold"),
-            ("FONTNAME",      (0,-1),(-1,-1),"Helvetica-Bold"),
-            ("FONTSIZE",      (0,0),(-1,-1), 8),
-            ("ROWBACKGROUNDS",(0,1),(-1,-2), [colors.white, LGRAY]),
-            ("BACKGROUND",    (0,-1),(-1,-1),LGRAY),
-            ("GRID",          (0,0),(-1,-1), 0.3, BDR),
+            ("FONTSIZE",      (0,0),(-1,0),  8),
+            # Data rows
+            ("FONTSIZE",      (0,1),(-1,-2), 8),
+            ("ROWBACKGROUNDS",(0,1),(-1,-2), [WHITE, LGRAY]),
+            # Totals row
+            ("BACKGROUND",    (0,-1),(-1,-1), MGRAY),
+            ("FONTNAME",      (0,-1),(-1,-1), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,-1),(-1,-1), 8),
+            # Alignment
             ("ALIGN",         (1,0),(-1,-1), "RIGHT"),
-            ("TOPPADDING",    (0,0),(-1,-1), 4),
-            ("BOTTOMPADDING", (0,0),(-1,-1), 4),
+            # Grid
+            ("GRID",          (0,0),(-1,-1), 0.3, BDR),
+            ("LINEBELOW",     (0,0),(-1,0),  1.0, BLUE),
+            ("LINEABOVE",     (0,-1),(-1,-1),0.5, BDR),
+            # Padding
+            ("TOPPADDING",    (0,0),(-1,-1), 5),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 5),
             ("LEFTPADDING",   (0,0),(-1,-1), 8),
+            ("RIGHTPADDING",  (0,0),(-1,-1), 8),
         ]))
-        story.append(t2)
+        return t
 
-    story.append(Spacer(1, 16))
-    story.append(Paragraph("Generated by Retape AI Settlement Feasibility Engine", cap))
+    def _status_banner(feasible: bool):
+        bg   = LGREEN  if feasible else LRED
+        bdr  = BGREEN  if feasible else BRED
+        col  = GREEN   if feasible else RED
+        icon = "✓ FEASIBLE" if feasible else "✗ INFEASIBLE"
+        sub  = (
+            "A valid payment schedule exists. The escrow balance stays non-negative "
+            "throughout and the full program fee is collected before the horizon."
+            if feasible else
+            "No valid payment schedule exists with the current funding level. "
+            "See the Additional Funding section for the minimum required."
+        )
+        tbl = Table(
+            [[
+                P(f'<font color="#{("16A34A" if feasible else "DC2626")}" size="16"><b>{icon}</b></font>'),
+                P(sub, S_small),
+            ]],
+            colWidths=[1.6*inch, 5.4*inch],
+        )
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(-1,-1), bg),
+            ("BOX",           (0,0),(-1,-1), 1,   bdr),
+            ("LEFTPADDING",   (0,0),(-1,-1), 14),
+            ("RIGHTPADDING",  (0,0),(-1,-1), 14),
+            ("TOPPADDING",    (0,0),(-1,-1), 12),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 12),
+            ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+        ]))
+        return tbl
+
+    def _kpi_grid(cells):
+        """cells = [(label, value, sub), ...]  — rendered as a row of mini KPI boxes."""
+        n  = len(cells)
+        cw = [(PW - LM - RM) / n] * n
+        header_row = [P(f"<b>{c[0]}</b>", S_lbl) for c in cells]
+        value_row  = [
+            P(f'<font size="14"><b>{c[1]}</b></font>', _s(f"kv{i}", fontSize=14,
+              fontName="Helvetica-Bold", textColor=NAVY, alignment=TA_LEFT))
+            for i, c in enumerate(cells)
+        ]
+        sub_row    = [P(c[2], S_small) for c in cells]
+        t = Table([header_row, value_row, sub_row], colWidths=cw)
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(-1,-1), WHITE),
+            ("BOX",           (0,0),(-1,-1), 0.5, BDR),
+            ("INNERGRID",     (0,0),(-1,-1), 0.3, BDR),
+            ("TOPPADDING",    (0,0),(-1,-1), 7),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+            ("LEFTPADDING",   (0,0),(-1,-1), 10),
+            ("BACKGROUND",    (0,0),(-1,0),  MGRAY),
+        ]))
+        return t
+
+    # ── Build story ───────────────────────────────────────────────────────────
+    story    = []
+    feasible = rd["feasible"]
+    sc       = rd.get("schedule") or []
+    diag     = rd.get("diagnostics") or {}
+    af       = rd.get("additional_funds")
+    shape    = rd.get("pay_shape_used", "—")
+    k        = diag.get("selected_k", len([r for r in sc if r["creditor_payment_cents"] > 0]))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # PAGE 1  ·  Executive summary
+    # ──────────────────────────────────────────────────────────────────────────
+    story.append(P(f"Settlement Analysis — {creditor}", S_h1))
+    story.append(P(
+        f"Creditor: <b>{creditor}</b>  ·  "
+        f"Settlement: <b>{round(an['offer_total'] / max(an['offer_total'] + an['savings'], 1) * 100, 1)}%</b> of original balance  ·  "
+        f"Generated: <b>{_date.today().isoformat()}</b>",
+        S_body,
+    ))
+    story.append(SP(10))
+    story.append(_status_banner(feasible))
+    story.append(SP(14))
+
+    # KPI strip — 3 most important numbers for the CEO/client
+    story.append(_kpi_grid([
+        ("Offer Total",  _fmt(an["offer_total"]),  "what creditor receives"),
+        ("Client Saves", _fmt(an["savings"]),       f"{an['savings_pct']}% of original balance"),
+        ("Total Cost",   _fmt(an["total_cost"]),    "offer + program fee + bank fees"),
+    ]))
+    story.append(SP(14))
+
+    # Financial breakdown — for the financial analyst
+    story.append(KeepTogether([
+        P("Financial Breakdown", S_h2),
+        HR(BLUE, thick=1, before=2, after=8),
+        _two_col_table([
+            ["Original Creditor Balance",       _fmt(an["offer_total"] + an["savings"])],
+            ["Settlement Percentage",            f"{round(an['offer_total'] / max(an['offer_total'] + an['savings'], 1) * 100, 2)}%"],
+            ["Offer Total  (creditor receives)", _fmt(an["offer_total"])],
+            ["Settlement Savings",               f"{_fmt(an['savings'])}  ({an['savings_pct']}% of original)"],
+            ["Program Fee  (Retape AI fee)",     _fmt(an["program_fee"])],
+            ["Bank Fees    (per-payment charge)",_fmt(an["bank_fees"])],
+            ["Total Program Cost",               _fmt(an["total_cost"])],
+            ["Net Savings After All Fees",       _fmt(an["savings"] - an["program_fee"] - an["bank_fees"])],
+        ]),
+    ]))
+    story.append(SP(10))
+
+    # Plan parameters — for the AI engineer / data analyst
+    if feasible:
+        story.append(KeepTogether([
+            P("Plan Parameters", S_h2),
+            HR(BLUE, thick=1, before=2, after=8),
+            _two_col_table([
+                ["Payment Shape",        shape.capitalize()],
+                ["Number of Payments (k)", str(k)],
+                ["Plan Duration",         f"{an['duration']} month{'s' if an['duration'] != 1 else ''}"],
+                ["First Payment Date",    an["first_pay"] or "—"],
+                ["Last Payment Date",     an["last_pay"]  or "—"],
+                ["Min Balance (Slack)",   _fmt(diag.get("min_balance_cents", 0))],
+                ["Fee-Only Months",       str(sum(1 for r in sc if r["creditor_payment_cents"] == 0 and r["program_fee_cents"] > 0))],
+                ["Total Bank Fees Paid",  _fmt(an["bank_fees"])],
+            ]),
+        ]))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # PAGE 2  ·  Full payment schedule (feasible) or gap analysis (infeasible)
+    # ──────────────────────────────────────────────────────────────────────────
+    story.append(PageBreak())
+
+    if feasible and sc:
+        story.append(P("Payment Schedule", S_h2))
+        story.append(P(
+            f"Each row is one cadence date. Credits (drafts) land on the draft day; "
+            f"debits (creditor payment + bank fee + program fee) are applied on the cadence date. "
+            f"<b>Running Balance</b> is after all debits on that date.",
+            S_small,
+        ))
+        story.append(SP(6))
+        story.append(_schedule_table(sc))
+        story.append(SP(10))
+
+        # Cumulative fee collection — for the data analyst / AI engineer
+        story.append(KeepTogether([
+            P("Program Fee Collection", S_h2),
+            HR(BLUE, thick=1, before=2, after=8),
+        ]))
+        fee_rows = [["Date", "Fee This Date", "Cumulative Fee Collected", "Remaining Fee"]]
+        total_fee = an["program_fee"]
+        running   = 0
+        for r in sc:
+            if r["program_fee_cents"] > 0:
+                running += r["program_fee_cents"]
+                fee_rows.append([
+                    r["date"],
+                    _fmt(r["program_fee_cents"]),
+                    _fmt(running),
+                    _fmt(max(0, total_fee - running)),
+                ])
+        if len(fee_rows) > 1:
+            ft = Table(fee_rows, colWidths=[1.2*inch, 1.3*inch, 1.7*inch, 1.3*inch],
+                       repeatRows=1)
+            ft.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0),(-1,0),  BLUE),
+                ("TEXTCOLOR",     (0,0),(-1,0),  WHITE),
+                ("FONTNAME",      (0,0),(-1,0),  "Helvetica-Bold"),
+                ("FONTSIZE",      (0,0),(-1,-1), 8),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [WHITE, LGRAY]),
+                ("ALIGN",         (1,0),(-1,-1), "RIGHT"),
+                ("GRID",          (0,0),(-1,-1), 0.3, BDR),
+                ("TOPPADDING",    (0,0),(-1,-1), 5),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+                ("LEFTPADDING",   (0,0),(-1,-1), 8),
+            ]))
+            story.append(ft)
+        else:
+            story.append(P("No program fee in this schedule (fee is zero).", S_small))
+        story.append(SP(10))
+
+        # Shape interpretation note — for the AI engineer
+        shape_notes = {
+            "even":      "Even shape: all creditor payments are equal (or as equal as possible with "
+                         "remainder cents on the latest payments). Ballooning is irrelevant when "
+                         "payments must be equal.",
+            "balloon":   "Balloon shape: early payments sit at the per-position floor (minimum allowed). "
+                         "The final payment absorbs the full remaining offer balance. Maximum deferral "
+                         "of creditor obligation — maximises free cash early for fee front-loading.",
+            "staircase": "Staircase shape: non-decreasing step function with at most max_segments distinct "
+                         "payment levels. The lexicographically smallest valid vector was chosen — smallest "
+                         "early payments leave the most free cash for fee collection early.",
+        }
+        story.append(KeepTogether([
+            P("Shape &amp; Optimisation Notes", S_h2),
+            HR(BLUE, thick=1, before=2, after=8),
+            P(shape_notes.get(shape, f"Shape: {shape}"), S_body),
+            SP(4),
+            P(
+                "The fee placement is greedy-earliest: at each cadence date the engine skims "
+                "the maximum fee the balance allows before moving forward. This is provably optimal "
+                "for front-loading — if any fee placement is feasible for a given payment vector, "
+                "the greedy one is. The two layers (payment vector and fee placement) are independent "
+                "and require no iteration.",
+                S_body,
+            ),
+        ]))
+
+    else:
+        # ── Infeasible: gap analysis ──────────────────────────────────────────
+        story.append(P("Infeasibility Analysis", S_h2))
+        story.append(HR(RED, thick=1.5, before=2, after=8))
+
+        kind   = diag.get("kind", "unknown")
+        reason = diag.get("reason", "")
+        bd     = diag.get("binding_date")
+        sf     = diag.get("shortfall_cents")
+
+        diag_tbl = Table(
+            [
+                [P("<b>Cause</b>",        S_lbl), P(kind,   S_mono)],
+                [P("<b>Explanation</b>",  S_lbl), P(reason, S_body)],
+                [P("<b>Binding Date</b>", S_lbl), P(str(bd) if bd else "—", S_body)],
+                [P("<b>Shortfall</b>",    S_lbl), P(_fmt(sf) if sf is not None else "—", S_body)],
+            ],
+            colWidths=[1.3*inch, 5.2*inch],
+        )
+        diag_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),(0,-1),  LRED),
+            ("ROWBACKGROUNDS",(1,0),(1,-1),  [WHITE, LGRAY]),
+            ("GRID",          (0,0),(-1,-1), 0.3, BDR),
+            ("TOPPADDING",    (0,0),(-1,-1), 7),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 7),
+            ("LEFTPADDING",   (0,0),(-1,-1), 10),
+            ("VALIGN",        (0,0),(-1,-1), "TOP"),
+        ]))
+        story.append(diag_tbl)
+        story.append(SP(14))
+
+        if af:
+            story.append(P("Minimum Additional Funding", S_h2))
+            story.append(P(
+                "Two independent funding options that would make a valid schedule possible. "
+                "They differ because a lump sum lands early (before the first usable cadence date) "
+                "while the monthly increment is spread across all future drafts — including any that "
+                "arrive too late to help, which is why the totals legitimately disagree.",
+                S_small,
+            ))
+            story.append(SP(8))
+
+            ls  = af["lump_sum"]
+            inc = af["monthly_increment"]
+
+            def _fund_block(opt: dict, kind_label: str, detail: str) -> Table:
+                ok     = opt["within_guardrail"]
+                bg     = LGREEN if ok else colors.HexColor("#FFFBEB")
+                badge  = "✓ Within guardrail" if ok else "⚠ Exceeds guardrail"
+                b_col  = GREEN if ok else AMBER
+                reason = opt.get("reason", "")
+                inner  = [
+                    [P(f"<b>{kind_label}</b>", S_h3),
+                     P(f'<font size="16"><b>{_fmt(opt["amount_cents"])}</b></font>',
+                       _s(f"fv{kind_label}", fontSize=16, fontName="Helvetica-Bold",
+                          textColor=NAVY, alignment=TA_RIGHT))],
+                    [P(detail, S_small),
+                     P(f'<font color="#{("16A34A" if ok else "D97706")}">{badge}</font>', S_lbl)],
+                ]
+                if reason:
+                    inner.append([P(reason, S_small), P("")])
+                t = Table(inner, colWidths=[2.8*inch, 2.8*inch])
+                t.setStyle(TableStyle([
+                    ("BACKGROUND",    (0,0),(-1,-1), bg),
+                    ("BOX",           (0,0),(-1,-1), 0.5, BDR),
+                    ("TOPPADDING",    (0,0),(-1,-1), 9),
+                    ("BOTTOMPADDING", (0,0),(-1,-1), 9),
+                    ("LEFTPADDING",   (0,0),(-1,-1), 12),
+                    ("RIGHTPADDING",  (0,0),(-1,-1), 12),
+                    ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+                ]))
+                return t
+
+            lump_detail = f"Single credit placed on {ls.get('date', '—')}"
+            inc_detail  = (
+                f"{_fmt(inc['amount_cents'])} added to each of "
+                f"{inc.get('num_drafts', '?')} future drafts"
+            )
+
+            funds_outer = Table(
+                [[_fund_block(ls, "Lump Sum", lump_detail),
+                  SP(1),
+                  _fund_block(inc, "Monthly Increment", inc_detail)]],
+                colWidths=[3.0*inch, 0.1*inch, 3.0*inch],
+            )
+            funds_outer.setStyle(TableStyle([
+                ("TOPPADDING",    (0,0),(-1,-1), 0),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 0),
+                ("LEFTPADDING",   (0,0),(-1,-1), 0),
+                ("RIGHTPADDING",  (0,0),(-1,-1), 0),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+            ]))
+            story.append(funds_outer)
+            story.append(SP(10))
+
+            # Guardrail reference table
+            lump_cap = round(an["offer_total"] * 0.65 / 100, 2)
+            from feasibility.models import offer_total_cents
+            story.append(KeepTogether([
+                P("Guardrail Reference", S_h3),
+                _two_col_table([
+                    ["Lump sum cap",          f"round(0.65 × offer_total) = {_fmt(round(an['offer_total'] * 0.65))}"],
+                    ["Monthly increment cap", f"max($100.00, round(0.40 × draft))"],
+                    ["Lump sum status",       "Within guardrail" if ls["within_guardrail"] else "Exceeds guardrail"],
+                    ["Monthly increment status", "Within guardrail" if inc["within_guardrail"] else "Exceeds guardrail"],
+                ]),
+            ]))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # LAST PAGE  ·  Technical notes (input parameters + methodology)
+    # ──────────────────────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(P("Technical Reference", S_h2))
+    story.append(HR(BLUE, thick=1, before=2, after=8))
+    story.append(P(
+        "This section documents the engine inputs and methodology for audit, "
+        "reproducibility, and AI/data engineering review.",
+        S_small,
+    ))
+    story.append(SP(8))
+
+    # Methodology
+    story.append(P("Engine Methodology", S_h3))
+    story.append(P(
+        "The settlement feasibility engine simulates the client's escrow account forward in time. "
+        "It works in two independent layers: (1) for each candidate payment count k, build the "
+        "lexicographically smallest valid creditor-payment vector — smallest early payments maximise "
+        "free cash for fee collection; (2) assign the program fee greedily from the earliest date "
+        "forward, skimming only free cash. Greedy-earliest fee is provably the most front-loaded and "
+        "most forgiving placement — if any fee schedule is feasible for a given payment vector, "
+        "the greedy one is. The two layers never iterate. The best k is chosen by the front-load "
+        "objective (cumulative fee collected at each cadence date, lexicographically). Ties break "
+        "toward fewer payments.",
+        S_body,
+    ))
+    story.append(SP(8))
+
+    story.append(P("Rounding Policy", S_h3))
+    story.append(P(
+        "All money is integer cents. Every rounding operation uses half-up (a 0.5 rounds away "
+        "from zero) implemented via Python's decimal.Decimal, not the language built-in round() "
+        "which is half-to-even. Offer total = round_half_up(settlement_pct × creditor_balance). "
+        "Program fee = round_half_up(program_fee_pct × original_balance).",
+        S_body,
+    ))
+    story.append(SP(8))
+
+    story.append(P("Assumptions", S_h3))
+    assumptions = [
+        "All future ledger credits are treated as client drafts for the monthly increment calculation.",
+        "Committed debits after last_draft_date are outside the planning window and not simulated.",
+        "The lump sum is placed on the earliest funded date (earliest date > as_of_date).",
+        "num_drafts counts all future drafts including any that arrive too late to help.",
+        "Same-date entries: credits are applied before debits on any given calendar date.",
+    ]
+    for a in assumptions:
+        story.append(P(f"• {a}", S_body))
+    story.append(SP(12))
+
+    story.append(HR(BDR))
+    story.append(P(
+        f"Retape AI Settlement Feasibility Engine  ·  "
+        f"Generated {_date.today().isoformat()}  ·  "
+        f"Python 3.12 stdlib  ·  76 deterministic tests  ·  Confidential",
+        S_cap,
+    ))
+
     doc.build(story)
     return buf.getvalue()
 
