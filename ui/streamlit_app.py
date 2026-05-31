@@ -27,12 +27,8 @@ from feasibility.models import client_from_dict, offer_from_dict, rules_from_dic
 from feasibility.validation import validate_inputs, ValidationError
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CSS
-# Lesson learned: Streamlit overrides class-based text colors on heading tags.
-# All critical text colors are set via inline style= on the HTML elements.
-# CSS here handles structural chrome only.
-# ─────────────────────────────────────────────────────────────────────────────
+# CSS handles structural chrome only. Streamlit's theme overrides class-based
+# text colors, so critical text colors are set inline on the elements instead.
 
 CSS = """
 <style>
@@ -216,13 +212,11 @@ def _load_case_texts(label: str) -> tuple[str, str, str]:
     )
 
 def _analytics(client_d: dict, offer_d: dict, rules_d: dict, rd: dict) -> dict:
-    """Derive every reported figure from the inputs and engine result.
+    """Report figures derived from the inputs and result.
 
-    Nothing here is specific to the demo cases — every value is computed from
-    the three input dicts and the result. Figures that only make sense for an
-    executed plan (collected fee, bank fees, total cost, net savings) are set
-    to None when the offer is infeasible, so the UI/PDF never present numbers
-    for a plan that does not exist.
+    Plan-execution figures (collected fee, bank fees, total cost, net savings)
+    are None when infeasible, so we never show numbers for a plan that does
+    not exist.
     """
     from decimal import Decimal, ROUND_HALF_UP
 
@@ -448,31 +442,35 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
         return t
 
     def _status_banner(feasible: bool):
-        bg   = LGREEN  if feasible else LRED
-        bdr  = BGREEN  if feasible else BRED
-        col  = GREEN   if feasible else RED
-        icon = "✓ FEASIBLE" if feasible else "✗ INFEASIBLE"
-        sub  = (
+        bg    = LGREEN  if feasible else LRED
+        bdr   = BGREEN  if feasible else BRED
+        hexc  = "16A34A" if feasible else "DC2626"
+        label = "FEASIBLE" if feasible else "INFEASIBLE"
+        icon  = "✓" if feasible else "✗"
+        sub   = (
             "A valid payment schedule exists. The escrow balance stays non-negative "
             "throughout and the full program fee is collected before the horizon."
             if feasible else
             "No valid payment schedule exists with the current funding level. "
             "See the Additional Funding section for the minimum required."
         )
+        status_style = _s("status", fontSize=13, fontName="Helvetica-Bold",
+                          textColor=colors.HexColor(f"#{hexc}"), leading=16)
         tbl = Table(
             [[
-                P(f'<font color="#{("16A34A" if feasible else "DC2626")}" size="16"><b>{icon}</b></font>'),
+                P(f'{icon}&nbsp;{label}', status_style),
                 P(sub, S_small),
             ]],
-            colWidths=[1.6*inch, 5.4*inch],
+            colWidths=[1.85*inch, 5.15*inch],
         )
         tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0,0),(-1,-1), bg),
             ("BOX",           (0,0),(-1,-1), 1,   bdr),
-            ("LEFTPADDING",   (0,0),(-1,-1), 14),
+            ("LEFTPADDING",   (0,0),(0,-1),  16),
+            ("LEFTPADDING",   (1,0),(1,-1),  4),
             ("RIGHTPADDING",  (0,0),(-1,-1), 14),
-            ("TOPPADDING",    (0,0),(-1,-1), 12),
-            ("BOTTOMPADDING", (0,0),(-1,-1), 12),
+            ("TOPPADDING",    (0,0),(-1,-1), 13),
+            ("BOTTOMPADDING", (0,0),(-1,-1), 13),
             ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
         ]))
         return tbl
@@ -583,7 +581,7 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
         ]))
         story.append(SP(10))
 
-    # Plan parameters — for the AI engineer / data analyst
+    # Plan parameters
     if feasible:
         story.append(KeepTogether([
             P("Plan Parameters", S_h2),
@@ -617,7 +615,7 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
         story.append(_schedule_table(sc))
         story.append(SP(10))
 
-        # Cumulative fee collection — for the data analyst / AI engineer
+        # Cumulative fee collection
         story.append(KeepTogether([
             P("Program Fee Collection", S_h2),
             HR(BLUE, thick=1, before=2, after=8),
@@ -654,7 +652,7 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
             story.append(P("No program fee in this schedule (fee is zero).", S_small))
         story.append(SP(10))
 
-        # Shape interpretation note — for the AI engineer
+        # Shape interpretation note
         shape_notes = {
             "even":      "Even shape: all creditor payments are equal (or as equal as possible with "
                          "remainder cents on the latest payments). Ballooning is irrelevant when "
@@ -726,31 +724,37 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
             ls  = af["lump_sum"]
             inc = af["monthly_increment"]
 
+            # Each card is a single-column stack sized to fit its half of the
+            # row (≈ 3.05"), so the badge never overflows the page edge.
+            CARD_W = 3.05 * inch
+
             def _fund_block(opt: dict, kind_label: str, detail: str) -> Table:
-                ok     = opt["within_guardrail"]
-                bg     = LGREEN if ok else colors.HexColor("#FFFBEB")
-                badge  = "✓ Within guardrail" if ok else "⚠ Exceeds guardrail"
-                b_col  = GREEN if ok else AMBER
-                reason = opt.get("reason", "")
-                inner  = [
-                    [P(f"<b>{kind_label}</b>", S_h3),
-                     P(f'<font size="16"><b>{_fmt(opt["amount_cents"])}</b></font>',
-                       _s(f"fv{kind_label}", fontSize=16, fontName="Helvetica-Bold",
-                          textColor=NAVY, alignment=TA_RIGHT))],
-                    [P(detail, S_small),
-                     P(f'<font color="#{("16A34A" if ok else "D97706")}">{badge}</font>', S_lbl)],
+                ok       = opt["within_guardrail"]
+                bg       = LGREEN if ok else colors.HexColor("#FFFBEB")
+                badge    = "✓ Within guardrail" if ok else "✗ Exceeds guardrail"
+                badge_hx = "16A34A" if ok else "D97706"
+                reason   = opt.get("reason", "")
+                amt_style = _s(f"amt_{kind_label}", fontSize=18, fontName="Helvetica-Bold",
+                               textColor=NAVY, leading=21)
+                rows = [
+                    [P(kind_label.upper(), S_lbl)],
+                    [P(f'{_fmt(opt["amount_cents"])}', amt_style)],
+                    [P(detail, S_small)],
+                    [P(f'<font color="#{badge_hx}"><b>{badge}</b></font>', S_lbl)],
                 ]
                 if reason:
-                    inner.append([P(reason, S_small), P("")])
-                t = Table(inner, colWidths=[2.8*inch, 2.8*inch])
+                    rows.append([P(f'<font color="#DC2626">{reason}</font>', S_small)])
+                t = Table(rows, colWidths=[CARD_W])
                 t.setStyle(TableStyle([
                     ("BACKGROUND",    (0,0),(-1,-1), bg),
                     ("BOX",           (0,0),(-1,-1), 0.5, BDR),
-                    ("TOPPADDING",    (0,0),(-1,-1), 9),
-                    ("BOTTOMPADDING", (0,0),(-1,-1), 9),
-                    ("LEFTPADDING",   (0,0),(-1,-1), 12),
-                    ("RIGHTPADDING",  (0,0),(-1,-1), 12),
-                    ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+                    ("LINEABOVE",     (0,0),(-1,0),  2.5, GREEN if ok else AMBER),
+                    ("TOPPADDING",    (0,0),(-1,0),  12),
+                    ("TOPPADDING",    (0,1),(-1,-1), 3),
+                    ("BOTTOMPADDING", (0,0),(-1,-2), 3),
+                    ("BOTTOMPADDING", (0,-1),(-1,-1),12),
+                    ("LEFTPADDING",   (0,0),(-1,-1), 14),
+                    ("RIGHTPADDING",  (0,0),(-1,-1), 14),
                 ]))
                 return t
 
@@ -762,19 +766,21 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
 
             funds_outer = Table(
                 [[_fund_block(ls, "Lump Sum", lump_detail),
-                  SP(1),
                   _fund_block(inc, "Monthly Increment", inc_detail)]],
-                colWidths=[3.0*inch, 0.1*inch, 3.0*inch],
+                colWidths=[CARD_W, CARD_W],
+                hAlign="LEFT",
             )
             funds_outer.setStyle(TableStyle([
+                ("LEFTPADDING",   (0,0),(0,-1),  0),
+                ("RIGHTPADDING",  (0,0),(0,-1),  9),
+                ("LEFTPADDING",   (1,0),(1,-1),  9),
+                ("RIGHTPADDING",  (1,0),(1,-1),  0),
                 ("TOPPADDING",    (0,0),(-1,-1), 0),
                 ("BOTTOMPADDING", (0,0),(-1,-1), 0),
-                ("LEFTPADDING",   (0,0),(-1,-1), 0),
-                ("RIGHTPADDING",  (0,0),(-1,-1), 0),
                 ("VALIGN",        (0,0),(-1,-1), "TOP"),
             ]))
             story.append(funds_outer)
-            story.append(SP(10))
+            story.append(SP(12))
 
             # Guardrail reference — every figure derived from the actual inputs.
             story.append(KeepTogether([
@@ -788,7 +794,7 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
                      f"{_fmt(an['inc_cap'])}  =  max($100.00, round(0.40 × {_fmt(an['draft_amount'])} draft))"],
                     ["Monthly increment required",
                      f"{_fmt(inc['amount_cents'])}  —  {'within' if inc['within_guardrail'] else 'exceeds'} cap"],
-                ]),
+                ], cw=[1.85*inch, 4.75*inch]),
             ]))
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -846,7 +852,7 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
     story.append(P(
         f"Retape AI Settlement Feasibility Engine  ·  "
         f"Generated {_date.today().isoformat()}  ·  "
-        f"Python 3.12 stdlib  ·  76 deterministic tests  ·  Confidential",
+        f"Python 3.12 stdlib  ·  deterministic engine  ·  Confidential",
         S_cap,
     ))
 
@@ -878,11 +884,9 @@ def _sidebar() -> tuple[str, str, str, bool]:
             key="case_selector",
         )
 
-        # ── THE FIX ──────────────────────────────────────────────────────────
-        # Streamlit text_area with key= reads from session_state; value= is
-        # only the initial default and is ignored on subsequent renders.
-        # Writing to session_state BEFORE the widget creation forces the update.
-        # ─────────────────────────────────────────────────────────────────────
+        # A keyed text_area reads from session_state and ignores value= after
+        # the first render, so write the chosen case into state before the
+        # widgets are created.
         if choice != st.session_state.get("_prev_case"):
             st.session_state["_prev_case"] = choice
             if choice not in (None, "— or paste below —"):
@@ -932,8 +936,6 @@ def _sidebar() -> tuple[str, str, str, bool]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_hero() -> None:
-    # White card with strong accent border — no dark background = no contrast problems.
-    # Inline styles on every text element so Streamlit CSS can't override them.
     st.markdown(
         '<div style="background:#FFFFFF;border:1px solid #E2E8F0;border-top:4px solid #2563EB;'
         'border-radius:12px;padding:26px 30px 22px;margin-bottom:22px;'
