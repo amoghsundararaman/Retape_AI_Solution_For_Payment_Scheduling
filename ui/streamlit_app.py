@@ -32,8 +32,22 @@ from feasibility.validation import validate_inputs, ValidationError
 
 CSS = """
 <style>
-#MainMenu, footer, .stDeployButton, header { display: none !important; }
-.block-container { padding-top: 1.2rem !important; padding-bottom: 2rem !important; }
+/* Hide the menu / deploy / footer clutter only. The header element is kept —
+   in Streamlit the control that reopens a collapsed sidebar lives inside it, so
+   hiding `header` outright (the old bug) left no way to reopen the sidebar.
+   Making it transparent blends it into the page while keeping it functional. */
+#MainMenu, footer, .stDeployButton, [data-testid="stDecoration"] { display: none !important; }
+header[data-testid="stHeader"] { background: transparent !important; }
+
+/* Keep the sidebar collapse / reopen button clearly visible. */
+[data-testid="stSidebarCollapseButton"] {
+    display: inline-flex !important;
+    visibility: visible !important;
+}
+
+/* Top padding clears the (now visible) header so the sidebar toggle does not
+   overlap the hero card. */
+.block-container { padding-top: 2.6rem !important; padding-bottom: 2rem !important; }
 
 /* Page background */
 .stApp { background: #F0F4FA !important; }
