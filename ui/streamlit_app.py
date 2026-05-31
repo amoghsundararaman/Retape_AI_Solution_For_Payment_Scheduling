@@ -12,7 +12,8 @@ if str(ROOT) not in sys.path:
 import plotly.graph_objects as go
 import streamlit as st
 
-CASES_DIR = ROOT / "cases"
+CASES_DIR  = ROOT / "cases"
+SAMPLE_DIR = ROOT / "sample_inputs"
 
 st.set_page_config(
     page_title="Retape AI — Settlement Engine",
@@ -186,48 +187,100 @@ CSS = """
 def _fmt(cents: int) -> str:
     return f"${cents / 100:,.2f}"
 
-def _discover_cases() -> list[str]:
-    if not CASES_DIR.is_dir():
-        return []
-    return sorted(
-        d.name for d in CASES_DIR.iterdir()
-        if d.is_dir() and all(
-            (d / f).exists()
-            for f in ("client.json", "offer.json", "creditor_rules.json")
-        )
-    )
+def _case_dirs() -> dict[str, "Path"]:
+    """Map each demo-case label to its folder, scanning cases/ then sample_inputs/.
 
-def _load_case_texts(name: str) -> tuple[str, str, str]:
-    d = CASES_DIR / name
+    Official cases are listed first; sample cases get a "sample · " prefix so
+    they are visually distinct in the dropdown. Both directories use the same
+    three-file layout, so loading is uniform.
+    """
+    required = ("client.json", "offer.json", "creditor_rules.json")
+    mapping: dict[str, Path] = {}
+    for root, prefix in ((CASES_DIR, ""), (SAMPLE_DIR, "sample · ")):
+        if not root.is_dir():
+            continue
+        for d in sorted(root.iterdir()):
+            if d.is_dir() and all((d / f).exists() for f in required):
+                mapping[f"{prefix}{d.name}"] = d
+    return mapping
+
+def _discover_cases() -> list[str]:
+    return list(_case_dirs().keys())
+
+def _load_case_texts(label: str) -> tuple[str, str, str]:
+    d = _case_dirs()[label]
     return (
         json.dumps(json.loads((d / "client.json").read_text()), indent=2),
         json.dumps(json.loads((d / "offer.json").read_text()), indent=2),
         json.dumps(json.loads((d / "creditor_rules.json").read_text()), indent=2),
     )
 
-def _analytics(offer_d: dict, rd: dict) -> dict:
+def _analytics(client_d: dict, offer_d: dict, rules_d: dict, rd: dict) -> dict:
+    """Derive every reported figure from the inputs and engine result.
+
+    Nothing here is specific to the demo cases — every value is computed from
+    the three input dicts and the result. Figures that only make sense for an
+    executed plan (collected fee, bank fees, total cost, net savings) are set
+    to None when the offer is infeasible, so the UI/PDF never present numbers
+    for a plan that does not exist.
+    """
     from decimal import Decimal, ROUND_HALF_UP
-    bal = offer_d.get("creditor_balance_cents", offer_d.get("current_balance_cents", 0))
-    ot  = int(
-        (Decimal(str(offer_d.get("settlement_pct", 0))) * Decimal(str(bal)))
-        .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-    orig = offer_d.get("original_balance_cents", 0)
-    sc   = rd.get("schedule") or []
-    bank = sum(r["bank_fee_cents"] for r in sc)
-    fee  = sum(r["program_fee_cents"] for r in sc)
-    sav  = orig - ot
+
+    def rhu(pct, amount) -> int:
+        return int((Decimal(str(pct)) * Decimal(str(amount)))
+                   .quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    cred_bal = offer_d.get("creditor_balance_cents", offer_d.get("current_balance_cents", 0))
+    orig_bal = offer_d.get("original_balance_cents", 0)
+    pct      = offer_d.get("settlement_pct", 0)
+    fee_pct  = rules_d.get("program_fee_pct", 0)
+    draft    = client_d.get("draft_amount_cents", 0)
+
+    feasible = rd.get("feasible", False)
+    sc       = rd.get("schedule") or []
+    diag     = rd.get("diagnostics") or {}
+
+    # Offer economics — valid whether or not a plan can execute.
+    offer_total      = rhu(pct, cred_bal)             # what the creditor receives
+    program_fee_owed = rhu(fee_pct, orig_bal)         # Retape's fee if the plan runs
+    settlement_savings = orig_bal - offer_total       # saved off the original balance
+
+    # Plan execution — only real when feasible (schedule actually exists).
+    bank_fees   = sum(r["bank_fee_cents"] for r in sc)
+    fee_paid    = sum(r["program_fee_cents"] for r in sc)
+    total_cost  = (offer_total + fee_paid + bank_fees) if feasible else None
+    net_savings = (settlement_savings - fee_paid - bank_fees) if feasible else None
+
+    # Guardrail caps — computed from the inputs, used in the infeasible report.
+    lump_cap = rhu(0.65, offer_total)
+    inc_cap  = max(10000, rhu(0.40, draft))
+
     return {
-        "offer_total": ot,
-        "program_fee": fee,
-        "bank_fees":   bank,
-        "total_cost":  ot + fee + bank,
-        "savings":     sav,
-        "savings_pct": round(sav / orig * 100, 1) if orig else 0.0,
-        "n_payments":  sum(1 for r in sc if r["creditor_payment_cents"] > 0),
-        "duration":    len(sc),
-        "first_pay":   sc[0]["date"] if sc else None,
-        "last_pay":    max((r["date"] for r in sc if r["creditor_payment_cents"] > 0), default=None),
+        "feasible":           feasible,
+        # Offer economics
+        "creditor_balance":   cred_bal,
+        "original_balance":   orig_bal,
+        "settlement_pct":     pct,
+        "settlement_pct_disp": round(pct * 100, 2),
+        "offer_total":        offer_total,
+        "settlement_savings": settlement_savings,
+        "savings_pct":        round(settlement_savings / orig_bal * 100, 1) if orig_bal else 0.0,
+        "program_fee_owed":   program_fee_owed,
+        # Plan execution (None when infeasible)
+        "program_fee":        fee_paid if feasible else None,
+        "bank_fees":          bank_fees if feasible else None,
+        "total_cost":         total_cost,
+        "net_savings":        net_savings,
+        "n_payments":         sum(1 for r in sc if r["creditor_payment_cents"] > 0),
+        "duration":           len(sc),
+        "first_pay":          sc[0]["date"] if sc else None,
+        "last_pay":           max((r["date"] for r in sc if r["creditor_payment_cents"] > 0), default=None),
+        # Inputs echoed for the report
+        "draft_amount":       draft,
+        # Funding gap (infeasible only)
+        "shortfall":          diag.get("shortfall_cents"),
+        "lump_cap":           lump_cap,
+        "inc_cap":            inc_cap,
     }
 
 
@@ -462,7 +515,7 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
     story.append(P(f"Settlement Analysis — {creditor}", S_h1))
     story.append(P(
         f"Creditor: <b>{creditor}</b>  ·  "
-        f"Settlement: <b>{round(an['offer_total'] / max(an['offer_total'] + an['savings'], 1) * 100, 1)}%</b> of original balance  ·  "
+        f"Settlement: <b>{an['settlement_pct_disp']}%</b> of current creditor balance  ·  "
         f"Generated: <b>{_date.today().isoformat()}</b>",
         S_body,
     ))
@@ -470,30 +523,65 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
     story.append(_status_banner(feasible))
     story.append(SP(14))
 
-    # KPI strip — 3 most important numbers for the CEO/client
-    story.append(_kpi_grid([
-        ("Offer Total",  _fmt(an["offer_total"]),  "what creditor receives"),
-        ("Client Saves", _fmt(an["savings"]),       f"{an['savings_pct']}% of original balance"),
-        ("Total Cost",   _fmt(an["total_cost"]),    "offer + program fee + bank fees"),
-    ]))
+    # KPI strip — the three numbers that matter, adapted to the verdict.
+    if feasible:
+        story.append(_kpi_grid([
+            ("Offer Total",  _fmt(an["offer_total"]),        "what creditor receives"),
+            ("Client Saves", _fmt(an["settlement_savings"]), f"{an['savings_pct']}% off original"),
+            ("Total Cost",   _fmt(an["total_cost"]),         "offer + program fee + bank fees"),
+        ]))
+    else:
+        shortfall = _fmt(an["shortfall"]) if an["shortfall"] is not None else "—"
+        story.append(_kpi_grid([
+            ("Offer Total",       _fmt(an["offer_total"]), "what the deal asks for"),
+            ("Funding Shortfall", shortfall,                "gap blocking the plan"),
+            ("Settlement %",      f"{an['settlement_pct_disp']}%", "of creditor balance"),
+        ]))
     story.append(SP(14))
 
-    # Financial breakdown — for the financial analyst
+    # Offer economics — true regardless of feasibility (describes the offer itself).
+    econ_rows = [
+        ["Original Balance (owed)",          _fmt(an["original_balance"])],
+        ["Current Creditor Balance",         _fmt(an["creditor_balance"])],
+        ["Settlement Percentage",            f"{an['settlement_pct_disp']}%  (of creditor balance)"],
+        ["Offer Total (creditor receives)",  _fmt(an["offer_total"])],
+        ["Settlement Savings vs Original",   f"{_fmt(an['settlement_savings'])}  ({an['savings_pct']}%)"],
+    ]
     story.append(KeepTogether([
-        P("Financial Breakdown", S_h2),
+        P("Offer Economics", S_h2),
         HR(BLUE, thick=1, before=2, after=8),
-        _two_col_table([
-            ["Original Creditor Balance",       _fmt(an["offer_total"] + an["savings"])],
-            ["Settlement Percentage",            f"{round(an['offer_total'] / max(an['offer_total'] + an['savings'], 1) * 100, 2)}%"],
-            ["Offer Total  (creditor receives)", _fmt(an["offer_total"])],
-            ["Settlement Savings",               f"{_fmt(an['savings'])}  ({an['savings_pct']}% of original)"],
-            ["Program Fee  (Retape AI fee)",     _fmt(an["program_fee"])],
-            ["Bank Fees    (per-payment charge)",_fmt(an["bank_fees"])],
-            ["Total Program Cost",               _fmt(an["total_cost"])],
-            ["Net Savings After All Fees",       _fmt(an["savings"] - an["program_fee"] - an["bank_fees"])],
-        ]),
+        _two_col_table(econ_rows),
     ]))
     story.append(SP(10))
+
+    # Plan cost — only present a cost breakdown when a plan actually executes.
+    if feasible:
+        story.append(KeepTogether([
+            P("Plan Cost Breakdown", S_h2),
+            HR(BLUE, thick=1, before=2, after=8),
+            _two_col_table([
+                ["Offer Total (to creditor)",     _fmt(an["offer_total"])],
+                ["Program Fee (Retape AI)",       _fmt(an["program_fee"])],
+                ["Bank Fees (per payment)",       _fmt(an["bank_fees"])],
+                ["Total Program Cost",            _fmt(an["total_cost"])],
+                ["Net Savings After All Fees",    _fmt(an["net_savings"])],
+            ]),
+        ]))
+        story.append(SP(10))
+    else:
+        story.append(KeepTogether([
+            P("Plan Cost Breakdown", S_h2),
+            HR(BLUE, thick=1, before=2, after=8),
+            P(
+                "No payment plan executes at the current funding level, so there is no "
+                f"realised program cost. If funded, the program fee would be "
+                f"{_fmt(an['program_fee_owed'])} (round(program_fee_pct × original balance)). "
+                "See the Infeasibility Analysis and Minimum Additional Funding sections "
+                "for the gap and how to close it.",
+                S_body,
+            ),
+        ]))
+        story.append(SP(10))
 
     # Plan parameters — for the AI engineer / data analyst
     if feasible:
@@ -688,16 +776,18 @@ def _build_pdf(rd: dict, an: dict, creditor: str) -> bytes:
             story.append(funds_outer)
             story.append(SP(10))
 
-            # Guardrail reference table
-            lump_cap = round(an["offer_total"] * 0.65 / 100, 2)
-            from feasibility.models import offer_total_cents
+            # Guardrail reference — every figure derived from the actual inputs.
             story.append(KeepTogether([
                 P("Guardrail Reference", S_h3),
                 _two_col_table([
-                    ["Lump sum cap",          f"round(0.65 × offer_total) = {_fmt(round(an['offer_total'] * 0.65))}"],
-                    ["Monthly increment cap", f"max($100.00, round(0.40 × draft))"],
-                    ["Lump sum status",       "Within guardrail" if ls["within_guardrail"] else "Exceeds guardrail"],
-                    ["Monthly increment status", "Within guardrail" if inc["within_guardrail"] else "Exceeds guardrail"],
+                    ["Lump sum cap",
+                     f"{_fmt(an['lump_cap'])}  =  round(0.65 × {_fmt(an['offer_total'])} offer total)"],
+                    ["Lump sum required",
+                     f"{_fmt(ls['amount_cents'])}  —  {'within' if ls['within_guardrail'] else 'exceeds'} cap"],
+                    ["Monthly increment cap",
+                     f"{_fmt(an['inc_cap'])}  =  max($100.00, round(0.40 × {_fmt(an['draft_amount'])} draft))"],
+                    ["Monthly increment required",
+                     f"{_fmt(inc['amount_cents'])}  —  {'within' if inc['within_guardrail'] else 'exceeds'} cap"],
                 ]),
             ]))
 
@@ -921,15 +1011,29 @@ def _render_status(rd: dict, an: dict) -> None:
 
 
 def _render_metrics(an: dict, slack: int | None) -> None:
-    slk_val = _fmt(slack) if slack is not None else "—"
-    tiles = [
-        ("c-blue",   "Offer Total",  _fmt(an["offer_total"]), "creditor receives"),
-        ("c-violet", "Program Fee",  _fmt(an["program_fee"]), "fee on original balance"),
-        ("c-slate",  "Total Cost",   _fmt(an["total_cost"]),  "creditor + fee + bank"),
-        ("c-green",  "Savings",      _fmt(an["savings"]),     f"{an['savings_pct']}% of original balance"),
-        ("c-amber",  "Bank Fees",    _fmt(an["bank_fees"]),   f"{an['n_payments']} payment(s) × bank fee"),
-        ("c-teal",   "Min Balance",  slk_val,                  "tightest buffer (schedule slack)"),
-    ]
+    if an["feasible"]:
+        # Executed-plan economics — every figure reflects a real schedule.
+        slk_val = _fmt(slack) if slack is not None else "—"
+        tiles = [
+            ("c-blue",   "Offer Total",  _fmt(an["offer_total"]), "creditor receives"),
+            ("c-violet", "Program Fee",  _fmt(an["program_fee"]), "collected across the plan"),
+            ("c-amber",  "Bank Fees",    _fmt(an["bank_fees"]),   f"{an['n_payments']} payment(s)"),
+            ("c-slate",  "Total Cost",   _fmt(an["total_cost"]),  "offer + fee + bank"),
+            ("c-green",  "Client Saves", _fmt(an["settlement_savings"]), f"{an['savings_pct']}% off original"),
+            ("c-teal",   "Min Balance",  slk_val,                  "tightest slack in schedule"),
+        ]
+    else:
+        # No plan executes — show the offer terms and the funding gap, not
+        # numbers from a schedule that doesn't exist.
+        shortfall = _fmt(an["shortfall"]) if an["shortfall"] is not None else "—"
+        tiles = [
+            ("c-blue",   "Offer Total",       _fmt(an["offer_total"]),     "what the deal asks for"),
+            ("c-slate",  "Original Balance",  _fmt(an["original_balance"]), "client's original debt"),
+            ("c-violet", "Settlement %",      f"{an['settlement_pct_disp']}%", "of current creditor balance"),
+            ("c-amber",  "Funding Shortfall", shortfall,                    "gap that blocks the plan"),
+            ("c-teal",   "Program Fee",       _fmt(an["program_fee_owed"]), "fee if the plan ran"),
+            ("c-green",  "Potential Savings", _fmt(an["settlement_savings"]), f"{an['savings_pct']}% — only if funded"),
+        ]
     html = '<div class="rp-metrics">'
     for cls, lbl, val, sub in tiles:
         html += (
@@ -1206,7 +1310,7 @@ def main() -> None:
                 with st.spinner("Simulating…"):
                     result = evaluate_offer(client, offer, rules)
                 rd = result.to_dict()
-                an = _analytics(offer_d, rd)
+                an = _analytics(client_d, offer_d, rules_d, rd)
                 # Store so re-runs from PDF download don't wipe the output
                 st.session_state["_stored_rd"]      = rd
                 st.session_state["_stored_an"]      = an

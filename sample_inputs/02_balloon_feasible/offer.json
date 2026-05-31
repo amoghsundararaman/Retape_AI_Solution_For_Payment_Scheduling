@@ -1,0 +1,7 @@
+{
+  "creditor": "Portfolio Recovery",
+  "creditor_balance_cents": 90000,
+  "original_balance_cents": 110000,
+  "settlement_pct": 0.55,
+  "first_payment_date": "2026-01-31"
+}

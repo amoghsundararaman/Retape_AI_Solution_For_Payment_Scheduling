@@ -1,0 +1,7 @@
+{
+  "creditor": "Midland Credit",
+  "creditor_balance_cents": 120000,
+  "original_balance_cents": 150000,
+  "settlement_pct": 0.5,
+  "first_payment_date": "2026-01-31"
+}

@@ -1,0 +1,7 @@
+{
+  "creditor": "Spring Oaks Capital",
+  "creditor_balance_cents": 100000,
+  "original_balance_cents": 300000,
+  "settlement_pct": 0.4,
+  "first_payment_date": "2026-01-31"
+}

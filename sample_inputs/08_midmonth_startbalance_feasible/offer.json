@@ -1,0 +1,7 @@
+{
+  "creditor": "Velocity Investments",
+  "creditor_balance_cents": 130000,
+  "original_balance_cents": 160000,
+  "settlement_pct": 0.5,
+  "first_payment_date": "2026-03-15"
+}

@@ -1,0 +1,70 @@
+{
+  "draft_amount_cents": 30000,
+  "draft_day": 15,
+  "first_draft_date": "2026-02-15",
+  "last_draft_date": "2027-01-15",
+  "as_of_date": "2026-01-31",
+  "current_balance_cents": 0,
+  "ledger": [
+    {
+      "date": "2026-02-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-03-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-04-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-05-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-06-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-07-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-08-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-09-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-10-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-11-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2026-12-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    },
+    {
+      "date": "2027-01-15",
+      "amount_cents": 30000,
+      "type": "credit"
+    }
+  ]
+}

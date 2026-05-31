@@ -1,0 +1,7 @@
+{
+  "creditor": "LVNV Funding",
+  "creditor_balance_cents": 200000,
+  "original_balance_cents": 240000,
+  "settlement_pct": 0.45,
+  "first_payment_date": "2026-02-28"
+}

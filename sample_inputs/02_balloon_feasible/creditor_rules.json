@@ -1,0 +1,12 @@
+{
+  "max_terms": 8,
+  "max_payments": 8,
+  "min_payment_cents": 3000,
+  "max_token_pays": 8,
+  "min_payment_tiers": [],
+  "even_pays": false,
+  "is_ballooning_allowed": true,
+  "max_segments": 4,
+  "bank_fee_cents": 300,
+  "program_fee_pct": 0.0
+}
